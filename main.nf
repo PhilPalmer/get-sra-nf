@@ -12,56 +12,53 @@
 
 int threads = Runtime.getRuntime().availableProcessors()
 
-accessionID = params.accession
-
 if (params.experiment) {
   Channel
   .fromPath(params.experiment)
   .ifEmpty { exit 1, "Experiment CSV file not found: ${params.experiment}" }
   .splitCsv(skip: 1)
-  .map { sraID, condition -> sraID }
-  .set { singleSRAId }
+  .map { sraID, condition, replicate -> [ sraID.trim(), condition.trim(), replicate.trim() ] }
+  .set { experiment }
 }
 
 /*--------------------------------------------------
-  If user has specified accession get SRA IDs
+  Get SRA IDs
 ---------------------------------------------------*/
 
-if (params.accession) {
-  process getSRAIDs {
-    tag "$id"
+process getSRAIDs {
+  tag "$id,$condition,$replicate"
+  publishDir "${params.outdir}/tmp", mode: 'copy'
 
-    cpus 1
+  cpus 1
 
-    input:
-    val id from accessionID
+  input:
+  set val(id), val(condition), val(replicate) from experiment
 
-    output:
-    file 'sra.txt' into sraIDs
+  output:
+  file "sra_${condition}_${replicate}.txt" into ( sraIDs, sraIDs_to_combine )
 
-    script:
-    """
-    esearch -db sra -query $id  | efetch --format runinfo | grep SRR | cut -d ',' -f 1 > sra.txt
-    """
-  }
-
-  sraIDs.splitText().map { it -> it.trim() }.set { singleSRAId }
+  script:
+  """
+  esearch -db sra -query $id  | efetch --format runinfo | grep SRR | cut -d ',' -f 1 > sra_${condition}_${replicate}.txt
+  sed -e 's/\$/,$condition,$replicate/' -i sra_${condition}_${replicate}.txt
+  """
 }
+
+sraIDs.splitCsv()
+      .set { singleSRAId }
 
 /*--------------------------------------------------
   Download FastQ files
 ---------------------------------------------------*/
 
 process fastqDump {
-
-    tag "$id"
-
-    publishDir params.outdir, mode: 'copy'
+    tag "$id,$condition,$replicate"
+    publishDir "${params.outdir}/reads", mode: 'copy'
 
     cpus threads
 
     input:
-    val id from singleSRAId
+    set val(id), val(condition), val(replicate) from singleSRAId
 
     output:
     set val(id), file('*.fastq.gz') into read_files
@@ -70,4 +67,26 @@ process fastqDump {
     """
     parallel-fastq-dump --sra-id $id --threads ${task.cpus} --gzip
     """ 
+}
+
+/*--------------------------------------------------
+  Get annotations for all SRAIDs
+---------------------------------------------------*/
+
+process getSRAIDsAnnotations {
+  publishDir "${params.outdir}/annotation", mode: 'copy'
+
+  cpus 1
+
+  input:
+  file (sraIDs) from sraIDs_to_combine.collect()
+
+  output:
+  file 'annotation.csv' into annotations
+
+  script:
+  """
+  echo 'sample_id,treatment,biological_replicate' > annotation.csv
+  cat $sraIDs >> annotation.csv
+  """
 }
