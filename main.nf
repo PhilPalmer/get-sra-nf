@@ -68,6 +68,6 @@ process fastqDump {
 
     script:
     """
-    parallel-fastq-dump --sra-id $id --threads ${task.cpus} --gzip
+    fastq-dump $id --gzip
     """ 
 }
