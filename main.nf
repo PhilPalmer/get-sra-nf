@@ -58,7 +58,7 @@ process fastqDump {
 
     publishDir params.outdir, mode: 'copy'
 
-    cpus threads
+    cpus 1
 
     input:
     val id from singleSRAId
