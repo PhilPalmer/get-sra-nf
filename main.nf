@@ -19,7 +19,7 @@ if (params.experiment) {
   .fromPath(params.experiment)
   .ifEmpty { exit 1, "Experiment CSV file not found: ${params.experiment}" }
   .splitCsv(skip: 1)
-  .map { sraID, condition -> sraID }
+  .map { sraID, condition, replicate -> sraID }
   .set { singleSRAId }
 }
 
